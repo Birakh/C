@@ -13,6 +13,8 @@
             --subtext: #a6adc8;
             --primary: #cba6f7;
             --primary-hover: #b4befe;
+            --secondary: #89b4fa;
+            --secondary-hover: #74c7ec;
             --success: #a6e3a1;
             --warning: #f9e2af;
             --border: #45475a;
@@ -124,6 +126,15 @@
         button:hover { background-color: var(--primary-hover); transform: translateY(-1px); }
         button:active { transform: translateY(1px); }
 
+        /* Prompt Section Styles */
+        hr { border: 0; height: 1px; background: var(--border); margin: 40px 0; }
+        .prompt-section { background-color: var(--surface2); padding: 20px; border-radius: 8px; border-left: 4px solid var(--secondary); }
+        .prompt-section h2 { margin-top: 0; color: var(--secondary); font-size: 1.2em; margin-bottom: 5px; }
+        .prompt-section p { margin-top: 0; color: var(--subtext); font-size: 0.9em; margin-bottom: 15px; }
+        #promptText { height: 180px; background-color: var(--surface1); font-family: system-ui, sans-serif; }
+        .prompt-btn { background-color: var(--secondary); }
+        .prompt-btn:hover { background-color: var(--secondary-hover); }
+
     </style>
 </head>
 <body>
@@ -170,6 +181,28 @@
         </div>
     </div>
 
+    <hr>
+
+    <div class="prompt-section">
+        <h2>Master Prompt for LLMs</h2>
+        <p>Use this prompt if you ever need an AI to rebuild, modify, or expand this specific tool.</p>
+        <textarea id="promptText" readonly>Act as an expert frontend developer. Build a 'Code & Text Token Compressor' in a single HTML/JS/CSS file. The goal is to safely minify code/text to save context window tokens before pasting into an LLM.
+
+Requirements:
+1. UI: Dark mode using CSS variables, grid layout for textareas, and a clean modern aesthetic.
+2. Structure: A dropdown menu for modes, 'Raw Input' textarea, 'Output' textarea, a savings banner, and a copy button.
+3. Live Metrics: Show Character Count, Est. Tokens (Math.ceil(chars / 4)), and % Saved updating on every keystroke.
+4. JS Logic (Switch statement based on mode):
+   - Text Mode: Strip common conversational fillers ("can you please", etc), remove stop words, and collapse multiple spaces.
+   - HTML Mode: Strip , remove leading line indentation, collapse multiple newlines, and remove spacing between tags (><).
+   - CSS Mode: Strip /* comments */, convert line breaks/tabs to spaces, and remove spaces around syntax characters ({}:;,>+~).
+   - Python Mode: Strip full-line # comments, remove trailing spaces, and strictly preserve leading indentation. Collapse 3+ newlines to 2.
+5. The Copy button should temporarily change text to "Copied!" for visual feedback.</textarea>
+        <div class="actions">
+            <button class="prompt-btn" id="copyPromptBtn">Copy Prompt</button>
+        </div>
+    </div>
+
     <script>
         const DOM = {
             input: document.getElementById('rawInput'),
@@ -180,10 +213,11 @@
             compChars: document.getElementById('compChars'),
             compTokens: document.getElementById('compTokens'),
             savings: document.getElementById('savingsDisplay'),
-            copyBtn: document.getElementById('copyBtn')
+            copyBtn: document.getElementById('copyBtn'),
+            promptText: document.getElementById('promptText'),
+            copyPromptBtn: document.getElementById('copyPromptBtn')
         };
 
-        // Dictionaries for Text Mode
         const FILLERS = ["can you please", "could you", "i would like to", "i want to", "please", "i was wondering if", "would you mind"];
         const STOPWORDS = [" a ", " an ", " the ", " basically ", " actually ", " just ", " very ", " really "];
 
@@ -191,7 +225,6 @@
             const rawText = DOM.input.value;
             const mode = DOM.mode.value;
 
-            // Handle empty state
             if (!rawText.trim()) {
                 DOM.output.value = "";
                 updateMetrics(0, 0);
@@ -203,49 +236,30 @@
             try {
                 switch(mode) {
                     case 'text':
-                        // Remove conversational fillers
-                        FILLERS.forEach(f => {
-                            result = result.replace(new RegExp(f, 'gi'), '');
-                        });
-                        // Remove common stop words
-                        STOPWORDS.forEach(w => {
-                            result = result.replace(new RegExp(w, 'gi'), ' ');
-                        });
-                        // Collapse multiple spaces and newlines
-                        result = result.replace(/[ \t]{2,}/g, ' ')
-                                       .replace(/\n{3,}/g, '\n\n')
-                                       .trim();
+                        FILLERS.forEach(f => { result = result.replace(new RegExp(f, 'gi'), ''); });
+                        STOPWORDS.forEach(w => { result = result.replace(new RegExp(w, 'gi'), ' '); });
+                        result = result.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
                         break;
 
                     case 'html':
-                        // Strip result = result.replace(//g, '');
-                        // Remove leading whitespace on each line
+                        result = result.replace(//g, '');
                         result = result.replace(/^[ \t]+/gm, '');
-                        // Collapse multiple newlines into one
                         result = result.replace(/\n{2,}/g, '\n');
-                        // Collapse tag spacing
                         result = result.replace(/>\s+</g, '><');
                         result = result.trim();
                         break;
 
                     case 'css':
-                        // Strip /* comments */
                         result = result.replace(/\/\*[\s\S]*?\*\//g, '');
-                        // Convert newlines and tabs to spaces
                         result = result.replace(/[\n\r\t]/g, ' ');
-                        // Collapse multiple spaces
                         result = result.replace(/\s{2,}/g, ' ');
-                        // Remove spaces around syntax characters
                         result = result.replace(/\s*([{}:;,>+~])\s*/g, '$1');
                         result = result.trim();
                         break;
 
                     case 'python':
-                        // Strip full-line comments (lines starting with optional whitespace then #)
                         result = result.replace(/^[ \t]*#.*(\n|$)/gm, '');
-                        // Strip trailing whitespace from ends of lines
                         result = result.replace(/[ \t]+$/gm, '');
-                        // Collapse 3+ newlines down to 2
                         result = result.replace(/\n{3,}/g, '\n\n');
                         result = result.trim();
                         break;
@@ -261,13 +275,11 @@
         }
 
         function updateMetrics(rawLength, compLength) {
-            // Rough LLM token estimation (4 chars per token)
             const rTokens = Math.ceil(rawLength / 4);
             const cTokens = Math.ceil(compLength / 4);
 
             DOM.rawChars.textContent = `Chars: ${rawLength}`;
             DOM.rawTokens.textContent = `Est. Tokens: ${rTokens}`;
-            
             DOM.compChars.textContent = `Chars: ${compLength}`;
             DOM.compTokens.textContent = `Est. Tokens: ${cTokens}`;
 
@@ -279,21 +291,23 @@
             }
         }
 
-        async function copyToClipboard() {
-            const textToCopy = DOM.output.value;
+        async function copyToClipboard(element, buttonElement) {
+            const textToCopy = element.value;
             if (!textToCopy) return;
 
             try {
                 await navigator.clipboard.writeText(textToCopy);
-                const originalText = DOM.copyBtn.textContent;
-                DOM.copyBtn.textContent = "Copied!";
-                DOM.copyBtn.style.backgroundColor = "var(--success)";
-                DOM.copyBtn.style.color = "var(--surface1)";
+                const originalText = buttonElement.textContent;
+                const originalBg = buttonElement.style.backgroundColor;
+                
+                buttonElement.textContent = "Copied!";
+                buttonElement.style.backgroundColor = "var(--success)";
+                buttonElement.style.color = "var(--surface1)";
                 
                 setTimeout(() => {
-                    DOM.copyBtn.textContent = originalText;
-                    DOM.copyBtn.style.backgroundColor = "var(--primary)";
-                    DOM.copyBtn.style.color = "var(--bg)";
+                    buttonElement.textContent = originalText;
+                    buttonElement.style.backgroundColor = originalBg;
+                    buttonElement.style.color = "var(--bg)";
                 }, 2000);
             } catch (err) {
                 alert("Clipboard access denied. Please copy manually.");
@@ -303,7 +317,8 @@
         // Attach Event Listeners
         DOM.input.addEventListener('input', compress);
         DOM.mode.addEventListener('change', compress);
-        DOM.copyBtn.addEventListener('click', copyToClipboard);
+        DOM.copyBtn.addEventListener('click', () => copyToClipboard(DOM.output, DOM.copyBtn));
+        DOM.copyPromptBtn.addEventListener('click', () => copyToClipboard(DOM.promptText, DOM.copyPromptBtn));
 
         // Initialize state
         compress();
