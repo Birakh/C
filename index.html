@@ -126,7 +126,6 @@
         button:hover { background-color: var(--primary-hover); transform: translateY(-1px); }
         button:active { transform: translateY(1px); }
 
-        /* Prompt Section Styles */
         hr { border: 0; height: 1px; background: var(--border); margin: 40px 0; }
         .prompt-section { background-color: var(--surface2); padding: 20px; border-radius: 8px; border-left: 4px solid var(--secondary); }
         .prompt-section h2 { margin-top: 0; color: var(--secondary); font-size: 1.2em; margin-bottom: 5px; }
@@ -134,7 +133,6 @@
         #promptText { height: 180px; background-color: var(--surface1); font-family: system-ui, sans-serif; }
         .prompt-btn { background-color: var(--secondary); }
         .prompt-btn:hover { background-color: var(--secondary-hover); }
-
     </style>
 </head>
 <body>
@@ -193,8 +191,8 @@ Requirements:
 2. Structure: A dropdown menu for modes, 'Raw Input' textarea, 'Output' textarea, a savings banner, and a copy button.
 3. Live Metrics: Show Character Count, Est. Tokens (Math.ceil(chars / 4)), and % Saved updating on every keystroke.
 4. JS Logic (Switch statement based on mode):
-   - Text Mode: Strip common conversational fillers ("can you please", etc), remove stop words, and collapse multiple spaces.
-   - HTML Mode: Strip , remove leading line indentation, collapse multiple newlines, and remove spacing between tags (><).
+   - Text Mode: Strip conversational fillers, remove stop words, and collapse spaces.
+   - HTML Mode: Strip HTML comments, remove leading line indentation, collapse multiple newlines, and remove spacing between tags. Use hex escapes in JS Regex to prevent parser breaking.
    - CSS Mode: Strip /* comments */, convert line breaks/tabs to spaces, and remove spaces around syntax characters ({}:;,>+~).
    - Python Mode: Strip full-line # comments, remove trailing spaces, and strictly preserve leading indentation. Collapse 3+ newlines to 2.
 5. The Copy button should temporarily change text to "Copied!" for visual feedback.</textarea>
@@ -204,125 +202,128 @@ Requirements:
     </div>
 
     <script>
-        const DOM = {
-            input: document.getElementById('rawInput'),
-            output: document.getElementById('compressedOutput'),
-            mode: document.getElementById('modeSelect'),
-            rawChars: document.getElementById('rawChars'),
-            rawTokens: document.getElementById('rawTokens'),
-            compChars: document.getElementById('compChars'),
-            compTokens: document.getElementById('compTokens'),
-            savings: document.getElementById('savingsDisplay'),
-            copyBtn: document.getElementById('copyBtn'),
-            promptText: document.getElementById('promptText'),
-            copyPromptBtn: document.getElementById('copyPromptBtn')
-        };
+        document.addEventListener("DOMContentLoaded", () => {
+            const DOM = {
+                input: document.getElementById('rawInput'),
+                output: document.getElementById('compressedOutput'),
+                mode: document.getElementById('modeSelect'),
+                rawChars: document.getElementById('rawChars'),
+                rawTokens: document.getElementById('rawTokens'),
+                compChars: document.getElementById('compChars'),
+                compTokens: document.getElementById('compTokens'),
+                savings: document.getElementById('savingsDisplay'),
+                copyBtn: document.getElementById('copyBtn'),
+                promptText: document.getElementById('promptText'),
+                copyPromptBtn: document.getElementById('copyPromptBtn')
+            };
 
-        const FILLERS = ["can you please", "could you", "i would like to", "i want to", "please", "i was wondering if", "would you mind"];
-        const STOPWORDS = [" a ", " an ", " the ", " basically ", " actually ", " just ", " very ", " really "];
+            const FILLERS = ["can you please", "could you", "i would like to", "i want to", "please", "i was wondering if", "would you mind"];
+            const STOPWORDS = [" a ", " an ", " the ", " basically ", " actually ", " just ", " very ", " really "];
 
-        function compress() {
-            const rawText = DOM.input.value;
-            const mode = DOM.mode.value;
+            function compress() {
+                try {
+                    let rawText = DOM.input.value;
+                    let mode = DOM.mode.value;
 
-            if (!rawText.trim()) {
-                DOM.output.value = "";
-                updateMetrics(0, 0);
-                return;
-            }
+                    if (!rawText || rawText.trim() === "") {
+                        DOM.output.value = "";
+                        updateMetrics(0, 0);
+                        return;
+                    }
 
-            let result = rawText;
+                    let result = rawText;
 
-            try {
-                switch(mode) {
-                    case 'text':
+                    if (mode === 'text') {
                         FILLERS.forEach(f => { result = result.replace(new RegExp(f, 'gi'), ''); });
                         STOPWORDS.forEach(w => { result = result.replace(new RegExp(w, 'gi'), ' '); });
                         result = result.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-                        break;
-
-                    case 'html':
-                        result = result.replace(//g, '');
+                    } 
+                    else if (mode === 'html') {
+                        // Using hex \x3C (<) and \x3E (>) to completely hide HTML tags from the browser parser
+                        result = result.replace(/\x3C!--[\s\S]*?--\x3E/g, ''); 
                         result = result.replace(/^[ \t]+/gm, '');
                         result = result.replace(/\n{2,}/g, '\n');
-                        result = result.replace(/>\s+</g, '><');
+                        result = result.replace(/\x3E\s+\x3C/g, '><');
                         result = result.trim();
-                        break;
-
-                    case 'css':
+                    }
+                    else if (mode === 'css') {
                         result = result.replace(/\/\*[\s\S]*?\*\//g, '');
                         result = result.replace(/[\n\r\t]/g, ' ');
                         result = result.replace(/\s{2,}/g, ' ');
                         result = result.replace(/\s*([{}:;,>+~])\s*/g, '$1');
                         result = result.trim();
-                        break;
-
-                    case 'python':
+                    }
+                    else if (mode === 'python') {
                         result = result.replace(/^[ \t]*#.*(\n|$)/gm, '');
                         result = result.replace(/[ \t]+$/gm, '');
                         result = result.replace(/\n{3,}/g, '\n\n');
                         result = result.trim();
-                        break;
+                    }
+
+                    DOM.output.value = result;
+                    updateMetrics(rawText.length, result.length);
+
+                } catch (err) {
+                    console.error("Compression failed:", err);
+                    DOM.output.value = "Error during compression. Check console.";
                 }
-
-                DOM.output.value = result;
-                updateMetrics(rawText.length, result.length);
-
-            } catch (err) {
-                console.error("Compression failed:", err);
-                DOM.output.value = "Error during compression. Check console.";
             }
-        }
 
-        function updateMetrics(rawLength, compLength) {
-            const rTokens = Math.ceil(rawLength / 4);
-            const cTokens = Math.ceil(compLength / 4);
+            function updateMetrics(rawLength, compLength) {
+                const rTokens = Math.ceil(rawLength / 4);
+                const cTokens = Math.ceil(compLength / 4);
 
-            DOM.rawChars.textContent = `Chars: ${rawLength}`;
-            DOM.rawTokens.textContent = `Est. Tokens: ${rTokens}`;
-            DOM.compChars.textContent = `Chars: ${compLength}`;
-            DOM.compTokens.textContent = `Est. Tokens: ${cTokens}`;
+                DOM.rawChars.textContent = `Chars: ${rawLength}`;
+                DOM.rawTokens.textContent = `Est. Tokens: ${rTokens}`;
+                DOM.compChars.textContent = `Chars: ${compLength}`;
+                DOM.compTokens.textContent = `Est. Tokens: ${cTokens}`;
 
-            if (rTokens > 0) {
-                const percentSaved = (((rTokens - cTokens) / rTokens) * 100).toFixed(1);
-                DOM.savings.textContent = `${percentSaved}% Tokens Saved`;
-            } else {
-                DOM.savings.textContent = `0% Tokens Saved`;
+                if (rTokens > 0) {
+                    const percentSaved = (((rTokens - cTokens) / rTokens) * 100).toFixed(1);
+                    DOM.savings.textContent = `${percentSaved}% Tokens Saved`;
+                } else {
+                    DOM.savings.textContent = `0% Tokens Saved`;
+                }
             }
-        }
 
-        async function copyToClipboard(element, buttonElement) {
-            const textToCopy = element.value;
-            if (!textToCopy) return;
-
-            try {
-                await navigator.clipboard.writeText(textToCopy);
-                const originalText = buttonElement.textContent;
-                const originalBg = buttonElement.style.backgroundColor;
+            async function copyToClipboard(elementToCopy, btnElement) {
+                if (!elementToCopy.value) return;
                 
-                buttonElement.textContent = "Copied!";
-                buttonElement.style.backgroundColor = "var(--success)";
-                buttonElement.style.color = "var(--surface1)";
-                
-                setTimeout(() => {
-                    buttonElement.textContent = originalText;
-                    buttonElement.style.backgroundColor = originalBg;
-                    buttonElement.style.color = "var(--bg)";
-                }, 2000);
-            } catch (err) {
-                alert("Clipboard access denied. Please copy manually.");
+                const triggerSuccessUI = () => {
+                    const oldText = btnElement.textContent;
+                    const oldBg = btnElement.style.backgroundColor;
+                    
+                    btnElement.textContent = "Copied!";
+                    btnElement.style.backgroundColor = "var(--success)";
+                    btnElement.style.color = "var(--surface1)";
+                    
+                    setTimeout(() => {
+                        btnElement.textContent = oldText;
+                        btnElement.style.backgroundColor = oldBg;
+                        btnElement.style.color = "var(--bg)";
+                    }, 2000);
+                };
+
+                try {
+                    await navigator.clipboard.writeText(elementToCopy.value);
+                    triggerSuccessUI();
+                } catch (err) {
+                    // Fallback for local files (file:///)
+                    elementToCopy.select();
+                    document.execCommand('copy');
+                    triggerSuccessUI();
+                }
             }
-        }
 
-        // Attach Event Listeners
-        DOM.input.addEventListener('input', compress);
-        DOM.mode.addEventListener('change', compress);
-        DOM.copyBtn.addEventListener('click', () => copyToClipboard(DOM.output, DOM.copyBtn));
-        DOM.copyPromptBtn.addEventListener('click', () => copyToClipboard(DOM.promptText, DOM.copyPromptBtn));
+            // Bind Events
+            DOM.input.addEventListener('input', compress);
+            DOM.mode.addEventListener('change', compress);
+            DOM.copyBtn.addEventListener('click', () => copyToClipboard(DOM.output, DOM.copyBtn));
+            DOM.copyPromptBtn.addEventListener('click', () => copyToClipboard(DOM.promptText, DOM.copyPromptBtn));
 
-        // Initialize state
-        compress();
-
+            // Initialize
+            compress();
+        });
     </script>
 </body>
 </html>
