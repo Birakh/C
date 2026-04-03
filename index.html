@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LLM Token Compressor (Code & Text)</title>
+    <title>LLM Token Compressor</title>
     <style>
         body {
             font-family: system-ui, -apple-system, sans-serif;
@@ -15,48 +15,23 @@
         }
         h1 { text-align: center; color: #cba6f7; margin-bottom: 5px; }
         p.subtitle { text-align: center; color: #a6adc8; margin-top: 0; margin-bottom: 30px; }
-        
         .controls { display: flex; justify-content: space-between; margin-bottom: 15px; align-items: center; }
-        select {
-            background-color: #313244; color: #cdd6f4; border: 1px solid #45475a;
-            padding: 10px; border-radius: 6px; font-size: 16px; cursor: pointer;
-        }
-        
+        select { background-color: #313244; color: #cdd6f4; border: 1px solid #45475a; padding: 10px; border-radius: 6px; font-size: 16px; cursor: pointer; }
         .container { display: flex; flex-direction: column; gap: 20px; margin-bottom: 40px; }
-        
         textarea {
-            width: 100%; background-color: #1e1e2e; color: #a6e3a1;
-            border: 1px solid #45475a; border-radius: 8px; padding: 12px;
-            font-family: monospace; font-size: 14px; resize: vertical; box-sizing: border-box;
+            width: 100%; background-color: #1e1e2e; color: #a6e3a1; border: 1px solid #45475a;
+            border-radius: 8px; padding: 12px; font-family: monospace; font-size: 14px; resize: vertical; box-sizing: border-box;
         }
         #rawInput, #compressedOutput { height: 200px; }
         textarea:focus { outline: none; border-color: #cba6f7; }
-        
         .stats { display: flex; justify-content: space-between; font-size: 14px; color: #a6adc8; margin-top: 5px; }
         .btn-container { text-align: right; }
-        
-        button {
-            background-color: #cba6f7; color: #11111b; border: none;
-            padding: 12px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s;
-        }
+        button { background-color: #cba6f7; color: #11111b; border: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
         button:hover { background-color: #b4befe; }
-        
         .savings { color: #f9e2af; font-weight: bold; text-align: center; font-size: 1.3em; padding: 10px; background: #313244; border-radius: 8px;}
-        
-        /* New Prompt Section Styles */
-        .prompt-section {
-            background-color: #313244;
-            padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid #89b4fa;
-        }
+        .prompt-section { background-color: #313244; padding: 20px; border-radius: 8px; border-left: 4px solid #89b4fa; }
         .prompt-section h2 { margin-top: 0; color: #89b4fa; font-size: 1.2em; }
-        #promptText {
-            height: 120px;
-            color: #cdd6f4;
-            background-color: #181825;
-            margin-bottom: 10px;
-        }
+        #promptText { height: 120px; color: #cdd6f4; background-color: #181825; margin-bottom: 10px; }
         .prompt-btn { background-color: #89b4fa; }
         .prompt-btn:hover { background-color: #74c7ec; }
         hr { border: 0; height: 1px; background: #45475a; margin: 40px 0; }
@@ -69,7 +44,7 @@
     
     <div class="controls">
         <label for="modeSelect"><strong>Select Compression Mode:</strong></label>
-        <select id="modeSelect" onchange="processText()">
+        <select id="modeSelect">
             <option value="text">Conversational Text</option>
             <option value="html">HTML</option>
             <option value="css">CSS</option>
@@ -97,7 +72,7 @@
         </div>
 
         <div class="btn-container">
-            <button onclick="copyText()">Copy Compressed Text</button>
+            <button id="copyCodeBtn">Copy Compressed Text</button>
         </div>
     </div>
 
@@ -113,103 +88,105 @@ Requirements:
 2. Two textareas: 'Raw Input' and 'LLM-Ready Output'.
 3. JavaScript logic tailored to each mode:
    - Text Mode: Strip conversational filler (please, could you) and useless stop words.
-   - HTML Mode: Strip , remove all leading line indentation, and collapse blank lines.
+   - HTML Mode: Strip &lt;!-- comments --&gt;, remove all leading line indentation, and collapse blank lines.
    - CSS Mode: Strip /* comments */, remove all line breaks, and remove spaces around {, }, :, and ;.
    - Python Mode: Strip full-line # comments and remove empty lines, but strictly preserve all leading whitespace/indentation.
 4. Real-time metrics showing Character Count, Estimated Tokens (Chars / 4), and % Saved.
 5. A clean, dark-mode UI with a 'Copy to Clipboard' button.</textarea>
         <div class="btn-container">
-            <button class="prompt-btn" onclick="copyPrompt()">Copy Prompt</button>
+            <button class="prompt-btn" id="copyPromptBtn">Copy Prompt</button>
         </div>
     </div>
 
     <script>
-        const rawInput = document.getElementById('rawInput');
-        const compressedOutput = document.getElementById('compressedOutput');
-        const modeSelect = document.getElementById('modeSelect');
-        const promptText = document.getElementById('promptText');
-        
-        const fillers = ["can you please", "could you", "i would like to", "i want to", "please", "i was wondering if"];
-        const stopWords = [" a ", " an ", " the ", " basically ", " actually "];
-
-        function processText() {
-            let text = rawInput.value;
-            const mode = modeSelect.value;
-
-            if (text.trim() === "") {
-                compressedOutput.value = "";
-                updateStats();
-                return;
-            }
-
-            if (mode === "text") {
-                // TEXT MODE: Remove fluff
-                let lowerText = text.toLowerCase();
-                fillers.forEach(phrase => text = text.replace(new RegExp(phrase, "gi"), ""));
-                stopWords.forEach(word => text = text.replace(new RegExp(word, "gi"), " "));
-                text = text.replace(/\s{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+        document.addEventListener("DOMContentLoaded", () => {
+            const rawInput = document.getElementById('rawInput');
+            const compressedOutput = document.getElementById('compressedOutput');
+            const modeSelect = document.getElementById('modeSelect');
+            const promptText = document.getElementById('promptText');
+            const copyCodeBtn = document.getElementById('copyCodeBtn');
+            const copyPromptBtn = document.getElementById('copyPromptBtn');
             
-            } else if (mode === "html") {
-                // HTML MODE: Safe minification
-                text = text.replace(//g, ''); // Remove comments
-                text = text.replace(/^[ \t]+/gm, ''); // Remove leading indentation
-                text = text.replace(/\n{2,}/g, '\n'); // Remove empty lines
-                text = text.replace(/>\s+</g, '><'); // Remove spaces between tags
-                text = text.trim();
+            const fillers = ["can you please", "could you", "i would like to", "i want to", "please", "i was wondering if"];
+            const stopWords = [" a ", " an ", " the ", " basically ", " actually "];
 
-            } else if (mode === "css") {
-                // CSS MODE: Aggressive minification
-                text = text.replace(/\/\*[\s\S]*?\*\//g, ''); // Remove comments
-                text = text.replace(/\n/g, ''); // Remove line breaks
-                text = text.replace(/\s+/g, ' '); // Collapse spaces
-                text = text.replace(/\s*([{}:;,])\s*/g, '$1'); // Remove spaces around syntax
-                text = text.trim();
+            function processText() {
+                try {
+                    let text = rawInput.value;
+                    const mode = modeSelect.value;
 
-            } else if (mode === "python") {
-                // PYTHON MODE: Strict whitespace preservation, remove comments/blank lines
-                text = text.replace(/^[ \t]*#.*$/gm, ''); // Remove whole-line comments safely
-                text = text.replace(/\n{2,}/g, '\n'); // Collapse multiple blank lines to one
-                text = text.trim();
+                    if (text.trim() === "") {
+                        compressedOutput.value = "";
+                        updateStats(0, 0);
+                        return;
+                    }
+
+                    if (mode === "text") {
+                        fillers.forEach(phrase => text = text.replace(new RegExp(phrase, "gi"), ""));
+                        stopWords.forEach(word => text = text.replace(new RegExp(word, "gi"), " "));
+                        text = text.replace(/\s{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+                    } else if (mode === "html") {
+                        text = text.replace(//g, '');
+                        text = text.replace(/^[ \t]+/gm, '');
+                        text = text.replace(/\n{2,}/g, '\n');
+                        text = text.replace(/>\s+</g, '><');
+                        text = text.trim();
+                    } else if (mode === "css") {
+                        text = text.replace(/\/\*[\s\S]*?\*\//g, '');
+                        text = text.replace(/\n/g, '');
+                        text = text.replace(/\s+/g, ' ');
+                        text = text.replace(/\s*([{}:;,])\s*/g, '$1');
+                        text = text.trim();
+                    } else if (mode === "python") {
+                        text = text.replace(/^[ \t]*#.*$/gm, '');
+                        text = text.replace(/\n{2,}/g, '\n');
+                        text = text.trim();
+                    }
+
+                    compressedOutput.value = text;
+                    updateStats(rawInput.value.length, text.length);
+                } catch (error) {
+                    console.error("Compression Error:", error);
+                    compressedOutput.value = "Error processing text. Check console.";
+                }
             }
 
-            compressedOutput.value = text;
-            updateStats();
-        }
+            function updateStats(rawLen, compLen) {
+                const rawTokens = Math.ceil(rawLen / 4);
+                const compTokens = Math.ceil(compLen / 4);
 
-        function updateStats() {
-            const rawText = rawInput.value;
-            const compText = compressedOutput.value;
+                document.getElementById('rawChars').innerText = `Chars: ${rawLen}`;
+                document.getElementById('rawTokens').innerText = `Est. Tokens: ${rawTokens}`;
+                
+                document.getElementById('compChars').innerText = `Chars: ${compLen}`;
+                document.getElementById('compTokens').innerText = `Est. Tokens: ${compTokens}`;
 
-            const rawTokens = Math.ceil(rawText.length / 4);
-            const compTokens = Math.ceil(compText.length / 4);
-
-            document.getElementById('rawChars').innerText = `Chars: ${rawText.length}`;
-            document.getElementById('rawTokens').innerText = `Est. Tokens: ${rawTokens}`;
-            
-            document.getElementById('compChars').innerText = `Chars: ${compText.length}`;
-            document.getElementById('compTokens').innerText = `Est. Tokens: ${compTokens}`;
-
-            if (rawTokens > 0) {
-                const saved = ((rawTokens - compTokens) / rawTokens * 100).toFixed(1);
-                document.getElementById('savingsDisplay').innerText = `${saved}% Tokens Saved`;
-            } else {
-                document.getElementById('savingsDisplay').innerText = `0% Tokens Saved`;
+                if (rawTokens > 0) {
+                    const saved = ((rawTokens - compTokens) / rawTokens * 100).toFixed(1);
+                    document.getElementById('savingsDisplay').innerText = `${saved}% Tokens Saved`;
+                } else {
+                    document.getElementById('savingsDisplay').innerText = `0% Tokens Saved`;
+                }
             }
-        }
 
-        function copyText() {
-            compressedOutput.select();
-            document.execCommand('copy');
-            alert("Copied text to clipboard! Ready for the LLM.");
-        }
+            async function copyToClipboard(textElement) {
+                try {
+                    await navigator.clipboard.writeText(textElement.value);
+                    alert("Copied to clipboard!");
+                } catch (err) {
+                    // Fallback for older browsers
+                    textElement.select();
+                    document.execCommand('copy');
+                    alert("Copied to clipboard (fallback used)!");
+                }
+            }
 
-        function copyPrompt() {
-            promptText.select();
-            document.execCommand('copy');
-            alert("Copied prompt to clipboard! Ready to paste into Claude.");
-        }
-
-        rawInput.addEventListener('input', processText);
+            // Event Listeners
+            rawInput.addEventListener('input', processText);
+            modeSelect.addEventListener('change', processText);
+            copyCodeBtn.addEventListener('click', () => copyToClipboard(compressedOutput));
+            copyPromptBtn.addEventListener('click', () => copyToClipboard(promptText));
+        });
     </script>
 </body>
 </html>
