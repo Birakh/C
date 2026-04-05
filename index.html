@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TokenPress — Prompt Compressor</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:      #0b0b0b;
+  --bg2:     #111;
+  --bg3:     #161616;
+  --border:  #222;
+  --border2: #2e2e2e;
+  --amber:   #f59e0b;
+  --amber2:  #b45309;
+  --green:   #22c55e;
+  --red:     #ef4444;
+  --blue:    #60a5fa;
+  --text:    #e2e2e2;
+  --dim:     #666;
+  --muted:   #3a3a3a;
+  --mono: 'IBM Plex Mono', monospace;
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+
+/* ── Header ─────────────────────────────────────── */
+header {
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  flex-shrink: 0;
+  gap: 16px;
+}
+.logo {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .18em;
+  color: var(--amber);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.logo em { color: var(--dim); font-style: normal; font-weight: 300; }
+.stats {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.stat { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.stat-label { font-size: 8.5px; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }
+.stat-value { font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text); }
+.stat-value.savings { color: var(--green); }
+.stat-value.ratio   { color: var(--amber); }
+.stat-value.big { font-size: 20px; }
+
+/* ── Panel stat strip ────────────────────────────── */
+.panel-stats {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 16px;
+  height: 30px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+.panel-stats::-webkit-scrollbar { height: 0; }
+.pstat {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0 12px 0 0;
+  margin-right: 12px;
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+}
+.pstat:last-child { border-right: none; }
+.pstat-label { font-size: 8.5px; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }
+.pstat-value { font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--dim); }
+.pstat-value.hi { color: var(--text); }
+.pstat-value.tok { color: var(--amber); }
+.pstat-value.saved-tok { color: var(--green); }
+.pstat-value.html-tag { color: var(--blue); }
+.pstat-badge {
+  font-size: 8px; letter-spacing: .08em; text-transform: uppercase;
+  padding: 1px 5px; border-radius: 2px; margin-left: 4px;
+  background: rgba(96,165,250,.1); color: var(--blue);
+  border: 1px solid rgba(96,165,250,.2);
+  vertical-align: middle;
+}
+
+/* ── Options bar ─────────────────────────────────── */
+.options-bar {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+.options-bar::-webkit-scrollbar { height: 0; }
+.bar-label {
+  font-size: 8.5px;
+  letter-spacing: .12em;
+  color: var(--muted);
+  text-transform: uppercase;
+  white-space: nowrap;
+  margin-right: 4px;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: border-color .1s, color .1s, background .1s;
+}
+.tag:hover { border-color: var(--border2); color: var(--text); }
+.tag.on { border-color: var(--amber); color: var(--amber); background: rgba(245,158,11,.07); }
+.tag.warn.on { border-color: var(--red); color: var(--red); background: rgba(239,68,68,.06); }
+.tag-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+/* ── Progress ────────────────────────────────────── */
+.progress { height: 2px; background: var(--bg3); flex-shrink: 0; }
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--amber), var(--green));
+  width: 0%;
+  transition: width .35s ease;
+}
+
+/* ── Main panels ─────────────────────────────────── */
+.workspace {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+.panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+.panel + .panel { border-left: 1px solid var(--border); }
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
+  flex-shrink: 0;
+}
+.panel-title { font-size: 9px; letter-spacing: .13em; text-transform: uppercase; color: var(--muted); }
+.panel-meta  { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.live { display: flex; align-items: center; gap: 5px; font-size: 9px; color: var(--green); letter-spacing: .08em; }
+.live-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); animation: blink 2s ease-in-out infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+textarea {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: none;
+  outline: none;
+  padding: 20px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.75;
+  resize: none;
+  width: 100%;
+}
+textarea::placeholder { color: var(--muted); font-style: italic; }
+textarea::-webkit-scrollbar { width: 4px; }
+textarea::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.output {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  cursor: text;
+  user-select: text;
+}
+.output:empty::before { content: "compressed output appears here…"; color: var(--muted); font-style: italic; }
+.output::-webkit-scrollbar { width: 4px; }
+.output::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* ── Middle control strip ────────────────────────── */
+.strip {
+  width: 44px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  background: var(--bg2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px 0;
+}
+.strip-btn {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border: none;
+  transition: all .12s;
+}
+.strip-btn.primary {
+  background: var(--amber);
+  color: #000;
+  font-weight: 600;
+  padding: 16px 9px;
+}
+.strip-btn.primary:hover { background: #fbbf24; }
+.strip-btn.primary:active { background: var(--amber2); }
+.strip-btn.secondary {
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--border2);
+  padding: 11px 7px;
+}
+.strip-btn.secondary:hover { border-color: var(--dim); color: var(--text); }
+.strip-btn.secondary.done { border-color: var(--green); color: var(--green); }
+
+/* ── Diff panel (bottom) ─────────────────────────── */
+.diff-section {
+  height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  background: var(--bg2);
+  transition: height .2s ease;
+  flex-shrink: 0;
+}
+.diff-section.open { height: 130px; }
+.diff-inner {
+  padding: 12px 18px;
+  overflow-y: auto;
+  height: 100%;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.diff-inner::-webkit-scrollbar { width: 4px; }
+.diff-inner::-webkit-scrollbar-thumb { background: var(--border2); }
+.diff-title { font-size: 8.5px; letter-spacing: .12em; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
+.diff-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.diff-item { 
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 7px; border-radius: 2px;
+  font-size: 10px; background: rgba(239,68,68,.1); color: var(--red);
+  border: 1px solid rgba(239,68,68,.2);
+}
+.diff-item::before { content: "−"; font-weight: 600; }
+
+/* ── Footer ─────────────────────────────────────── */
+footer {
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg2);
+  flex-shrink: 0;
+}
+footer span { font-size: 9px; color: var(--muted); letter-spacing: .08em; }
+#diff-toggle {
+  font-size: 9px; color: var(--dim); cursor: pointer; letter-spacing: .06em;
+  background: none; border: none; font-family: var(--mono);
+}
+#diff-toggle:hover { color: var(--text); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Token<em>Press</em></div>
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-label">Input tokens</span>
+      <span class="stat-value big" id="s-in">0</span>
+    </div>
+    <div style="color:var(--muted);font-size:18px;padding:0 4px;align-self:center;">→</div>
+    <div class="stat">
+      <span class="stat-label">Output tokens</span>
+      <span class="stat-value big savings" id="s-out">0</span>
+    </div>
+    <div style="width:1px;height:28px;background:var(--border);margin:0 4px;flex-shrink:0;align-self:center;"></div>
+    <div class="stat">
+      <span class="stat-label">Tokens saved</span>
+      <span class="stat-value big ratio" id="s-saved">—</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Reduction</span>
+      <span class="stat-value ratio" id="s-ratio">—</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Chars saved</span>
+      <span class="stat-value" id="s-chars">—</span>
+    </div>
+  </div>
+</header>
+
+<div class="options-bar">
+  <span class="bar-label">techniques:</span>
+  <div class="tag on" data-key="whitespace"><span class="tag-dot"></span>whitespace</div>
+  <div class="tag on" data-key="filler"><span class="tag-dot"></span>filler words</div>
+  <div class="tag on" data-key="hedges"><span class="tag-dot"></span>hedges</div>
+  <div class="tag on" data-key="abbreviate"><span class="tag-dot"></span>abbreviations</div>
+  <div class="tag on" data-key="symbols"><span class="tag-dot"></span>symbols</div>
+  <div class="tag on" data-key="markdown"><span class="tag-dot"></span>strip markdown</div>
+  <div class="tag on" data-key="contractions"><span class="tag-dot"></span>contractions</div>
+  <div class="tag warn" data-key="stopwords"><span class="tag-dot"></span>stop words ⚠</div>
+  <div class="tag warn" data-key="aggressive"><span class="tag-dot"></span>aggressive ⚠</div>
+</div>
+
+<div class="progress"><div class="progress-fill" id="prog"></div></div>
+
+<div class="workspace">
+
+  <div class="panel">
+    <div class="panel-head">
+      <span class="panel-title">raw input</span>
+      <div class="live"><span class="live-dot"></span>live</div>
+    </div>
+    <div class="panel-stats" id="in-stats">
+      <div class="pstat"><span class="pstat-label">tokens</span><span class="pstat-value tok" id="ps-in-tok">0</span></div>
+      <div class="pstat"><span class="pstat-label">chars</span><span class="pstat-value" id="ps-in-chars">0</span></div>
+      <div class="pstat"><span class="pstat-label">words</span><span class="pstat-value" id="ps-in-words">0</span></div>
+      <div class="pstat"><span class="pstat-label">lines</span><span class="pstat-value" id="ps-in-lines">0</span></div>
+      <div class="pstat"><span class="pstat-label">sentences</span><span class="pstat-value" id="ps-in-sents">0</span></div>
+      <div class="pstat" id="ps-in-html-wrap" style="display:none"><span class="pstat-label">html tags</span><span class="pstat-value html-tag" id="ps-in-tags">0</span><span class="pstat-badge">HTML</span></div>
+      <div class="pstat" id="ps-in-code-wrap" style="display:none"><span class="pstat-label">code blocks</span><span class="pstat-value html-tag" id="ps-in-code">0</span></div>
+    </div>
+    <textarea id="inp" placeholder="Paste your raw prompt here — verbose, polite, repetitive text compresses best. TokenPress strips filler phrases, redundant qualifiers, and common wordings that inflate token counts without adding meaning…"></textarea>
+  </div>
+
+  <div class="strip">
+    <button class="strip-btn primary" id="btn-compress">Compress</button>
+    <button class="strip-btn secondary" id="btn-copy">Copy</button>
+    <button class="strip-btn secondary" id="btn-clear">Clear</button>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <span class="panel-title">compressed output</span>
+      <span class="panel-meta" id="out-meta"></span>
+    </div>
+    <div class="panel-stats" id="out-stats">
+      <div class="pstat"><span class="pstat-label">tokens</span><span class="pstat-value tok hi" id="ps-out-tok">0</span></div>
+      <div class="pstat"><span class="pstat-label">saved</span><span class="pstat-value saved-tok" id="ps-out-saved">—</span></div>
+      <div class="pstat"><span class="pstat-label">chars</span><span class="pstat-value" id="ps-out-chars">0</span></div>
+      <div class="pstat"><span class="pstat-label">words</span><span class="pstat-value" id="ps-out-words">0</span></div>
+      <div class="pstat"><span class="pstat-label">lines</span><span class="pstat-value" id="ps-out-lines">0</span></div>
+      <div class="pstat"><span class="pstat-label">sentences</span><span class="pstat-value" id="ps-out-sents">0</span></div>
+      <div class="pstat" id="ps-out-html-wrap" style="display:none"><span class="pstat-label">html tags</span><span class="pstat-value html-tag" id="ps-out-tags">0</span></div>
+    </div>
+    <div class="output" id="out" contenteditable="true" spellcheck="false"></div>
+  </div>
+
+</div>
+
+<div class="diff-section" id="diff-sect">
+  <div class="diff-inner">
+    <div class="diff-title">removed phrases</div>
+    <div class="diff-list" id="diff-list"></div>
+  </div>
+</div>
+
+<footer>
+  <span>token estimate: ~4 chars / token (BPE approximation)</span>
+  <button id="diff-toggle">▸ show removed</button>
+</footer>
+
+<script>
+const opts = {
+  whitespace:   true,
+  filler:       true,
+  hedges:       true,
+  abbreviate:   true,
+  symbols:      true,
+  markdown:     true,
+  contractions: true,
+  stopwords:    false,
+  aggressive:   false,
+};
+
+const removed = [];
+
+/* ── Rules ──────────────────────────────────────── */
+const FILLER = [
+  [/\bI\s+would\s+like\s+you\s+to\s+/gi, ''],
+  [/\bI\s+want\s+you\s+to\s+/gi, ''],
+  [/\bI\s+need\s+you\s+to\s+/gi, ''],
+  [/\bI\s+am\s+asking\s+you\s+to\s+/gi, ''],
+  [/\bCould\s+you\s+please\s+/gi, ''],
+  [/\bCould\s+you\s+kindly\s+/gi, ''],
+  [/\bCould\s+you\s+/gi, ''],
+  [/\bWould\s+you\s+please\s+/gi, ''],
+  [/\bWould\s+you\s+mind\s+/gi, ''],
+  [/\bWould\s+you\s+/gi, ''],
+  [/\bCan\s+you\s+please\s+/gi, ''],
+  [/\bCan\s+you\s+/gi, ''],
+  [/\bPlease\s+/gi, ''],
+  [/\bKindly\s+/gi, ''],
+  [/\bI\s+need\s+/gi, ''],
+  [/\bI\s+want\s+/gi, ''],
+  [/\bI\s+would\s+like\s+/gi, ''],
+  [/\bI\s+am\s+looking\s+for\s+/gi, ''],
+  [/\bI'm\s+looking\s+for\s+/gi, ''],
+  [/\bYour\s+task\s+is\s+to\s+/gi, ''],
+  [/\bYou\s+are\s+tasked\s+with\s+/gi, ''],
+  [/\bYou\s+should\s+/gi, ''],
+  [/\bYou\s+need\s+to\s+/gi, ''],
+  [/\bMake\s+sure\s+to\s+/gi, ''],
+  [/\bMake\s+sure\s+that\s+/gi, 'ensure '],
+  [/\bBe\s+sure\s+to\s+/gi, ''],
+  [/\bDon'?t\s+forget\s+to\s+/gi, ''],
+  [/\bFeel\s+free\s+to\s+/gi, ''],
+  [/\bGo\s+ahead\s+and\s+/gi, ''],
+  [/\bAs\s+an?\s+AI(\s+language\s+model)?(\s+assistant)?,?\s*/gi, ''],
+  [/\bAs\s+Claude,?\s*/gi, ''],
+  [/\bNote\s+that\s+/gi, 'note: '],
+  [/\bPlease\s+note\s+that\s+/gi, 'note: '],
+  [/\bPlease\s+be\s+aware\s+that\s+/gi, 'note: '],
+  [/\bPlease\s+keep\s+in\s+mind\s+that\s+/gi, 'note: '],
+];
+
+const HEDGES = [
+  [/\bit\s+is\s+important\s+to\s+note\s+that\s+/gi, ''],
+  [/\bit\s+is\s+worth\s+noting\s+that\s+/gi, ''],
+  [/\bit\s+should\s+be\s+noted\s+that\s+/gi, ''],
+  [/\bif\s+possible,?\s+/gi, ''],
+  [/\bif\s+you\s+can,?\s+/gi, ''],
+  [/\bif\s+applicable,?\s+/gi, ''],
+  [/\bwhenever\s+possible,?\s+/gi, ''],
+  [/\bwhere\s+appropriate,?\s+/gi, ''],
+  [/\bwhere\s+possible,?\s+/gi, ''],
+  [/\bin\s+your\s+(response|answer|reply),?\s+/gi, ''],
+  [/\bas\s+much\s+as\s+possible\b/gi, ''],
+  [/\bto\s+the\s+best\s+of\s+your\s+ability\b/gi, ''],
+  [/\bvery\s+/gi, ''],
+  [/\breally\s+/gi, ''],
+  [/\bextremely\s+/gi, ''],
+  [/\babsolutely\s+/gi, ''],
+  [/\bquite\s+/gi, ''],
+  [/\brather\s+/gi, ''],
+  [/\bsomewhat\s+/gi, ''],
+  [/\bjust\s+/gi, ''],
+  [/\bsimply\s+/gi, ''],
+  [/\bbasically,?\s+/gi, ''],
+  [/\bactually\s+/gi, ''],
+  [/\bliterally\s+/gi, ''],
+  [/\bspecifically\s+/gi, ''],
+  [/\bparticularly\s+/gi, ''],
+  [/\bessentially\s+/gi, ''],
+  [/\bfundamentally\s+/gi, ''],
+  [/\boverall,?\s+/gi, ''],
+  [/\bkindly\s+/gi, ''],
+  [/\bpotentially\s+/gi, ''],
+  [/\bpossibly\s+/gi, ''],
+  [/\bperhaps\s+/gi, ''],
+  [/\bmaybe\s+/gi, ''],
+  [/\bcertainly\s+/gi, ''],
+  [/\bsurely\s+/gi, ''],
+  [/\bobviously\s+/gi, ''],
+  [/\bclearly\s+/gi, ''],
+];
+
+const ABBREVS = [
+  [/\bfor\s+example\b/gi, 'e.g.'],
+  [/\bfor\s+instance\b/gi, 'e.g.'],
+  [/\bthat\s+is(\s+to\s+say)?\b/gi, 'i.e.'],
+  [/\bin\s+other\s+words\b/gi, 'i.e.'],
+  [/\band\s+so\s+on\b/gi, 'etc.'],
+  [/\bversus\b/gi, 'vs.'],
+  [/\bas\s+soon\s+as\s+possible\b/gi, 'ASAP'],
+  [/\bapproximately\b/gi, '~'],
+  [/\bnumber\s+of\b/gi, '# of'],
+  [/\bmaximum\b/gi, 'max'],
+  [/\bminimum\b/gi, 'min'],
+  [/\bwith\s+regard\s+to\b/gi, 're:'],
+  [/\bwith\s+respect\s+to\b/gi, 're:'],
+  [/\bregarding\b/gi, 're:'],
+  [/\bconcerning\b/gi, 're:'],
+  [/\bwithout\b/gi, 'w/o'],
+  [/\binformation\b/gi, 'info'],
+  [/\bdocuments?\b/gi, 'docs'],
+  [/\bfunction\b/gi, 'fn'],
+  [/\bparameters?\b/gi, 'params'],
+  [/\bvariables?\b/gi, 'vars'],
+  [/\bapplications?\b/gi, 'app'],
+  [/\bdevelopment\b/gi, 'dev'],
+  [/\bproduction\b/gi, 'prod'],
+  [/\bconfiguration\b/gi, 'config'],
+  [/\brepository\b/gi, 'repo'],
+  [/\bdependenc(y|ies)\b/gi, 'dep(s)'],
+  [/\bauthentication\b/gi, 'auth'],
+  [/\bdatabase\b/gi, 'db'],
+  [/\bimplementation\b/gi, 'impl'],
+  [/\brequirements?\b/gi, 'req'],
+  [/\benvironment\b/gi, 'env'],
+  [/\bfrequently\s+asked\s+questions?\b/gi, 'FAQ'],
+  [/\buser\s+interface\b/gi, 'UI'],
+  [/\bapplication\s+programming\s+interface\b/gi, 'API'],
+];
+
+const SYMBOLS = [
+  [/\bin\s+order\s+to\b/gi, 'to'],
+  [/\bso\s+that\b/gi, '→'],
+  [/\bleads?\s+to\b/gi, '→'],
+  [/\bresults?\s+in\b/gi, '→'],
+  [/\bcauses?\b/gi, '→'],
+  [/\bwhich\s+means?\b/gi, '→'],
+  [/\btherefore\b/gi, '∴'],
+  [/\bconsequently\b/gi, '∴'],
+  [/\bthus\b/gi, '∴'],
+  [/\bbecause\b/gi, 'bc'],
+  [/\bgreater\s+than\b/gi, '>'],
+  [/\bless\s+than\b/gi, '<'],
+  [/\bequal\s+to\b/gi, '='],
+  [/\bmore\s+than\b/gi, '>'],
+  [/\bfewer\s+than\b/gi, '<'],
+  [/\bat\s+least\b/gi, '≥'],
+  [/\bat\s+most\b/gi, '≤'],
+  [/\bplus\b/gi, '+'],
+  [/\bor\s+more\b/gi, '+'],
+  [/\band\b/gi, '&'],
+  [/\bwith\b/gi, 'w/'],
+  [/\bnot\s+equal\s+to\b/gi, '≠'],
+  [/\bapproximately\s+equal\b/gi, '≈'],
+  [/\barrow\s+pointing\s+to\b/gi, '→'],
+];
+
+const STOPWORDS = [
+  /\b(the|a|an)\s+(?=[a-z])/gi,
+  /\bsome\s+/gi,
+  /\bmany\s+/gi,
+  /\bvarious\s+/gi,
+  /\bcertain\s+/gi,
+];
+
+const CONTRACTIONS = [
+  [/\bdo\s+not\b/gi, "don't"],
+  [/\bdoes\s+not\b/gi, "doesn't"],
+  [/\bdid\s+not\b/gi, "didn't"],
+  [/\bwill\s+not\b/gi, "won't"],
+  [/\bcannot\b/gi, "can't"],
+  [/\bcan\s+not\b/gi, "can't"],
+  [/\bis\s+not\b/gi, "isn't"],
+  [/\bare\s+not\b/gi, "aren't"],
+  [/\bwas\s+not\b/gi, "wasn't"],
+  [/\bwere\s+not\b/gi, "weren't"],
+  [/\bhave\s+not\b/gi, "haven't"],
+  [/\bhas\s+not\b/gi, "hasn't"],
+  [/\bhad\s+not\b/gi, "hadn't"],
+  [/\bshould\s+not\b/gi, "shouldn't"],
+  [/\bwould\s+not\b/gi, "wouldn't"],
+  [/\bcould\s+not\b/gi, "couldn't"],
+  [/\bI\s+am\b/gi, "I'm"],
+  [/\bI\s+will\b/gi, "I'll"],
+  [/\bI\s+have\b/gi, "I've"],
+  [/\bthey\s+are\b/gi, "they're"],
+  [/\bwe\s+are\b/gi, "we're"],
+  [/\byou\s+are\b/gi, "you're"],
+  [/\bit\s+is\b/gi, "it's"],
+  [/\bthat\s+is\b/gi, "that's"],
+  [/\bthere\s+is\b/gi, "there's"],
+];
+
+/* ── Compression engine ─────────────────────────── */
+function compress(input) {
+  if (!input.trim()) return '';
+  let t = input;
+  const drops = [];
+
+  function apply(rules, label) {
+    rules.forEach(([re, rep]) => {
+      t = t.replace(re, (m) => { if (m.trim()) drops.push(m.trim()); return rep; });
+    });
+  }
+
+  if (opts.markdown) {
+    t = t
+      .replace(/#{1,6}\s+/g, '')
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/__(.+?)__/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .replace(/_(.+?)_/g, '$1')
+      .replace(/~~(.+?)~~/g, '$1')
+      .replace(/`(.+?)`/g, '$1')
+      .replace(/\[(.+?)\]\(.+?\)/g, '$1')
+      .replace(/!\[.*?\]\(.+?\)/g, '')
+      .replace(/^[-*]\s+/gm, '• ')
+      .replace(/^\d+\.\s+/gm, '• ');
+  }
+  if (opts.filler)       apply(FILLER,       'filler');
+  if (opts.hedges)       apply(HEDGES,       'hedges');
+  if (opts.contractions) apply(CONTRACTIONS, 'contractions');
+  if (opts.abbreviate)   apply(ABBREVS,      'abbreviations');
+  if (opts.symbols)      apply(SYMBOLS,      'symbols');
+
+  if (opts.stopwords) {
+    STOPWORDS.forEach(re => {
+      t = t.replace(re, (m) => { drops.push(m.trim()); return ''; });
+    });
+  }
+
+  if (opts.aggressive) {
+    const agg = [
+      [/\bthat\s+/gi, ''],
+      [/\bwhich\s+/gi, ''],
+      [/\bit\s+is\s+/gi, ''],
+      [/\bthere\s+(is|are)\s+/gi, ''],
+      [/\bthis\s+is\s+/gi, ''],
+      [/\bthese\s+are\s+/gi, ''],
+    ];
+    agg.forEach(([re, rep]) => {
+      t = t.replace(re, (m) => { if(m.trim()) drops.push(m.trim()); return rep; });
+    });
+  }
+
+  if (opts.whitespace) {
+    t = t
+      .replace(/\t/g, ' ')
+      .replace(/[ ]{2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^\s+/gm, m => m.replace(/ +/g, ''))
+      .trim();
+  }
+
+  return { text: t.trim(), drops: [...new Set(drops.filter(Boolean).filter(d => d.length > 1))] };
+}
+
+function estimateTokens(s) {
+  const words = s.trim().split(/\s+/).filter(Boolean).length;
+  return Math.ceil(words * 1.3);
+}
+
+/* ── UI ─────────────────────────────────────────── */
+const inp     = document.getElementById('inp');
+const outEl   = document.getElementById('out');
+const prog    = document.getElementById('prog');
+const sIn     = document.getElementById('s-in');
+const sOut    = document.getElementById('s-out');
+const sSaved  = document.getElementById('s-saved');
+const sRatio  = document.getElementById('s-ratio');
+const outMeta = document.getElementById('out-meta');
+const diffList = document.getElementById('diff-list');
+const diffSect = document.getElementById('diff-sect');
+const diffToggle = document.getElementById('diff-toggle');
+
+let diffOpen = false;
+diffToggle.addEventListener('click', () => {
+  diffOpen = !diffOpen;
+  diffSect.classList.toggle('open', diffOpen);
+  diffToggle.textContent = diffOpen ? '▾ hide removed' : '▸ show removed';
+});
+
+function run() {
+  const raw = inp.value;
+  if (!raw.trim()) {
+    outEl.textContent = '';
+    updateStats(0, 0);
+    diffList.innerHTML = '';
+    return;
+  }
+  const { text, drops } = compress(raw);
+  outEl.textContent = text;
+
+  // diff list
+  diffList.innerHTML = '';
+  drops.slice(0, 60).forEach(d => {
+    const el = document.createElement('span');
+    el.className = 'diff-item';
+    el.textContent = d;
+    diffList.appendChild(el);
+  });
+  if (drops.length > 60) {
+    const more = document.createElement('span');
+    more.className = 'diff-item';
+    more.style.borderColor = 'var(--border2)';
+    more.style.color = 'var(--dim)';
+    more.style.background = 'transparent';
+    more.textContent = `+${drops.length - 60} more`;
+    diffList.appendChild(more);
+  }
+
+  const inTok  = estimateTokens(raw);
+  const outTok = estimateTokens(text);
+  updateStats(inTok, outTok);
+}
+
+function updateStats(inTok, outTok) {
+  sIn.textContent  = inTok.toLocaleString();
+  sOut.textContent = outTok.toLocaleString();
+  if (inTok > 0) {
+    const saved = inTok - outTok;
+    const ratio = ((saved / inTok) * 100).toFixed(1);
+    sSaved.textContent = (saved >= 0 ? '−' : '+') + Math.abs(saved).toLocaleString();
+    sRatio.textContent = ratio + '%';
+    prog.style.width   = Math.max(0, Math.min(100, parseFloat(ratio))) + '%';
+    outMeta.textContent = outTok.toLocaleString() + ' tokens';
+  } else {
+    sSaved.textContent = '—';
+    sRatio.textContent = '—';
+    prog.style.width   = '0%';
+    outMeta.textContent = '';
+  }
+}
+
+inp.addEventListener('input', run);
+document.getElementById('btn-compress').addEventListener('click', run);
+
+document.getElementById('btn-copy').addEventListener('click', () => {
+  const text = outEl.textContent;
+  if (!text) return;
+  navigator.clipboard.writeText(text);
+  const btn = document.getElementById('btn-copy');
+  btn.textContent = 'Copied!';
+  btn.classList.add('done');
+  setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('done'); }, 1600);
+});
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  inp.value = '';
+  outEl.textContent = '';
+  diffList.innerHTML = '';
+  updateStats(0, 0);
+});
+
+document.querySelectorAll('.tag').forEach(el => {
+  el.addEventListener('click', () => {
+    const k = el.dataset.key;
+    opts[k] = !opts[k];
+    el.classList.toggle('on', opts[k]);
+    run();
+  });
+});
+</script>
+</body>
+</html>
