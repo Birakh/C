@@ -306,6 +306,71 @@ footer span { font-size: 9px; color: var(--muted); letter-spacing: .08em; }
   background: none; border: none; font-family: var(--mono);
 }
 #diff-toggle:hover { color: var(--text); }
+
+/* ── Auto-detect badge ───────────────────────────── */
+.detect-badge {
+  font-size: 8px; letter-spacing: .1em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 2px;
+  font-weight: 500; white-space: nowrap;
+}
+.detect-plain    { background: rgba(102,102,102,.15); color: var(--dim); border: 1px solid var(--border2); }
+.detect-markdown { background: rgba(245,158,11,.1);  color: var(--amber); border: 1px solid rgba(245,158,11,.25); }
+.detect-html     { background: rgba(96,165,250,.1);  color: var(--blue);  border: 1px solid rgba(96,165,250,.25); }
+.detect-code     { background: rgba(34,197,94,.1);   color: var(--green); border: 1px solid rgba(34,197,94,.25); }
+.detect-mixed    { background: rgba(239,68,68,.08);  color: #f97316;      border: 1px solid rgba(249,115,22,.25); }
+
+/* ── Mobile layout ───────────────────────────────── */
+@media (max-width: 680px) {
+  html, body { height: 100dvh; }
+
+  header {
+    height: auto;
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .logo { font-size: 11px; }
+  .stats { gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+  .stat-value.big { font-size: 15px; }
+  .stat-value { font-size: 12px; }
+  .stat-label { font-size: 7.5px; }
+
+  .options-bar { height: auto; padding: 8px 12px; flex-wrap: wrap; gap: 5px; }
+
+  .workspace { flex-direction: column; }
+
+  .panel + .panel { border-left: none; border-top: 1px solid var(--border); }
+
+  .strip {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    justify-content: center;
+    padding: 8px 12px;
+    border-left: none;
+    border-right: none;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+  }
+  .strip-btn {
+    writing-mode: horizontal-tb;
+    transform: none;
+    font-size: 9.5px;
+    letter-spacing: .14em;
+  }
+  .strip-btn.primary  { padding: 8px 20px; }
+  .strip-btn.secondary { padding: 7px 14px; }
+
+  textarea { font-size: 14px; padding: 14px; min-height: 35vh; }
+  .output  { font-size: 14px; padding: 14px; min-height: 30vh; }
+
+  .panel-stats { height: auto; padding: 6px 12px; flex-wrap: wrap; gap: 5px 0; }
+  .pstat { padding: 0 8px 0 0; margin-right: 8px; }
+
+  .diff-section.open { height: 110px; }
+  footer { padding: 0 14px; }
+}
 </style>
 </head>
 <body>
@@ -358,7 +423,10 @@ footer span { font-size: 9px; color: var(--muted); letter-spacing: .08em; }
   <div class="panel">
     <div class="panel-head">
       <span class="panel-title">raw input</span>
-      <div class="live"><span class="live-dot"></span>live</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="detect-badge detect-plain" id="detect-badge">plain</span>
+        <div class="live"><span class="live-dot"></span>live</div>
+      </div>
     </div>
     <div class="panel-stats" id="in-stats">
       <div class="pstat"><span class="pstat-label">tokens</span><span class="pstat-value tok" id="ps-in-tok">0</span></div>
@@ -669,11 +737,6 @@ function compress(input) {
   return { text: t.trim(), drops: [...new Set(drops.filter(Boolean).filter(d => d.length > 1))] };
 }
 
-function estimateTokens(s) {
-  const words = s.trim().split(/\s+/).filter(Boolean).length;
-  return Math.ceil(words * 1.3);
-}
-
 /* ── UI ─────────────────────────────────────────── */
 const inp     = document.getElementById('inp');
 const outEl   = document.getElementById('out');
@@ -682,6 +745,7 @@ const sIn     = document.getElementById('s-in');
 const sOut    = document.getElementById('s-out');
 const sSaved  = document.getElementById('s-saved');
 const sRatio  = document.getElementById('s-ratio');
+const sChars  = document.getElementById('s-chars');
 const outMeta = document.getElementById('out-meta');
 const diffList = document.getElementById('diff-list');
 const diffSect = document.getElementById('diff-sect');
@@ -694,16 +758,125 @@ diffToggle.addEventListener('click', () => {
   diffToggle.textContent = diffOpen ? '▾ hide removed' : '▸ show removed';
 });
 
+function countStats(s) {
+  const chars    = s.length;
+  const words    = s.trim() ? s.trim().split(/\s+/).filter(Boolean).length : 0;
+  const lines    = s ? s.split('\n').length : 0;
+  const tokens   = Math.ceil(words * 1.3);
+  const sents    = s.trim() ? (s.match(/[.!?]+(\s|$)/g) || []).length : 0;
+  const htmlTags = (s.match(/<\/?[a-zA-Z][^>]*>/g) || []).length;
+  const codeBlocks = (s.match(/```[\s\S]*?```/g) || []).length;
+  const isHtml   = htmlTags > 2;
+  return { chars, words, lines, tokens, sents, htmlTags, codeBlocks, isHtml };
+}
+
+/* ── Auto-detect content type ───────────────────── */
+let lastDetected = '';
+function detectType(s) {
+  if (!s.trim()) return 'plain';
+  const htmlTags   = (s.match(/<\/?[a-zA-Z][^>]*>/g) || []).length;
+  const mdHeadings = (s.match(/^#{1,6}\s/gm) || []).length;
+  const mdBold     = (s.match(/\*\*.+?\*\*/g) || []).length;
+  const mdLists    = (s.match(/^[-*]\s+/gm) || []).length;
+  const codeBlocks = (s.match(/```/g) || []).length;
+  const mdScore    = mdHeadings + mdBold + mdLists;
+
+  if (htmlTags > 3 && mdScore > 2) return 'mixed';
+  if (htmlTags > 3) return 'html';
+  if (codeBlocks >= 2) return 'code';
+  if (mdScore >= 2)  return 'markdown';
+  return 'plain';
+}
+
+const DETECT_LABELS = {
+  plain:    'plain text',
+  markdown: 'markdown',
+  html:     'HTML',
+  code:     'code',
+  mixed:    'mixed',
+};
+
+function updateDetectBadge(s) {
+  const type = detectType(s);
+  if (type === lastDetected) return type;
+  lastDetected = type;
+  const badge = document.getElementById('detect-badge');
+  badge.textContent = DETECT_LABELS[type];
+  badge.className = 'detect-badge detect-' + type;
+
+  // Auto-toggle markdown strip based on detected type
+  const mdTag = document.querySelector('.tag[data-key="markdown"]');
+  if (type === 'html') {
+    // HTML: disable markdown stripping (it would mangle tags)
+    if (opts.markdown) {
+      opts.markdown = false;
+      mdTag.classList.remove('on');
+    }
+  } else if (type === 'markdown' || type === 'code' || type === 'mixed') {
+    // Markdown/code: ensure markdown strip is ON
+    if (!opts.markdown) {
+      opts.markdown = true;
+      mdTag.classList.add('on');
+    }
+  }
+  return type;
+}
+
+function fmt(n) { return n.toLocaleString(); }
+
+function updatePanelStats(prefix, s, inTok) {
+  const st = countStats(s);
+  document.getElementById(prefix + 'tok').textContent  = fmt(st.tokens);
+  document.getElementById(prefix + 'chars').textContent = fmt(st.chars);
+  document.getElementById(prefix + 'words').textContent = fmt(st.words);
+  document.getElementById(prefix + 'lines').textContent = fmt(st.lines);
+  document.getElementById(prefix + 'sents').textContent = fmt(st.sents);
+
+  // saved (output panel only)
+  const savedEl = document.getElementById(prefix + 'saved');
+  if (savedEl && inTok !== undefined) {
+    const saved = inTok - st.tokens;
+    savedEl.textContent = saved > 0 ? '−' + fmt(saved) : saved === 0 ? '0' : '+' + fmt(Math.abs(saved));
+    savedEl.style.color = saved > 0 ? 'var(--green)' : saved < 0 ? 'var(--red)' : 'var(--dim)';
+  }
+
+  // HTML detection
+  const htmlWrap = document.getElementById(prefix + 'html-wrap');
+  if (htmlWrap) {
+    htmlWrap.style.display = st.isHtml ? '' : 'none';
+    const tagEl = document.getElementById(prefix + 'tags');
+    if (tagEl) tagEl.textContent = fmt(st.htmlTags);
+  }
+
+  // code blocks (input panel only)
+  const codeWrap = document.getElementById(prefix + 'code-wrap');
+  if (codeWrap) {
+    codeWrap.style.display = st.codeBlocks > 0 ? '' : 'none';
+    const codeEl = document.getElementById(prefix + 'code');
+    if (codeEl) codeEl.textContent = fmt(st.codeBlocks);
+  }
+
+  return st;
+}
+
 function run() {
   const raw = inp.value;
+  updateDetectBadge(raw);
   if (!raw.trim()) {
     outEl.textContent = '';
-    updateStats(0, 0);
+    updatePanelStats('ps-in-',  '', undefined);
+    updatePanelStats('ps-out-', '', 0);
+    updateHeaderStats(0, 0, 0, 0);
     diffList.innerHTML = '';
     return;
   }
   const { text, drops } = compress(raw);
   outEl.textContent = text;
+
+  const inSt  = updatePanelStats('ps-in-',  raw,  undefined);
+  const outSt = updatePanelStats('ps-out-', text, inSt.tokens);
+
+  updateHeaderStats(inSt.tokens, outSt.tokens, inSt.chars, outSt.chars);
 
   // diff list
   diffList.innerHTML = '';
@@ -716,31 +889,28 @@ function run() {
   if (drops.length > 60) {
     const more = document.createElement('span');
     more.className = 'diff-item';
-    more.style.borderColor = 'var(--border2)';
-    more.style.color = 'var(--dim)';
-    more.style.background = 'transparent';
+    more.style.cssText = 'border-color:var(--border2);color:var(--dim);background:transparent';
     more.textContent = `+${drops.length - 60} more`;
     diffList.appendChild(more);
   }
-
-  const inTok  = estimateTokens(raw);
-  const outTok = estimateTokens(text);
-  updateStats(inTok, outTok);
 }
 
-function updateStats(inTok, outTok) {
-  sIn.textContent  = inTok.toLocaleString();
-  sOut.textContent = outTok.toLocaleString();
+function updateHeaderStats(inTok, outTok, inChars, outChars) {
+  sIn.textContent  = fmt(inTok);
+  sOut.textContent = fmt(outTok);
   if (inTok > 0) {
-    const saved = inTok - outTok;
-    const ratio = ((saved / inTok) * 100).toFixed(1);
-    sSaved.textContent = (saved >= 0 ? '−' : '+') + Math.abs(saved).toLocaleString();
+    const savedTok   = inTok - outTok;
+    const savedChars = inChars - outChars;
+    const ratio = ((savedTok / inTok) * 100).toFixed(1);
+    sSaved.textContent = (savedTok >= 0 ? '−' : '+') + fmt(Math.abs(savedTok));
     sRatio.textContent = ratio + '%';
+    sChars.textContent = (savedChars >= 0 ? '−' : '+') + fmt(Math.abs(savedChars));
     prog.style.width   = Math.max(0, Math.min(100, parseFloat(ratio))) + '%';
-    outMeta.textContent = outTok.toLocaleString() + ' tokens';
+    outMeta.textContent = fmt(outTok) + ' tokens';
   } else {
     sSaved.textContent = '—';
     sRatio.textContent = '—';
+    sChars.textContent = '—';
     prog.style.width   = '0%';
     outMeta.textContent = '';
   }
@@ -763,7 +933,9 @@ document.getElementById('btn-clear').addEventListener('click', () => {
   inp.value = '';
   outEl.textContent = '';
   diffList.innerHTML = '';
-  updateStats(0, 0);
+  updatePanelStats('ps-in-',  '', undefined);
+  updatePanelStats('ps-out-', '', 0);
+  updateHeaderStats(0, 0, 0, 0);
 });
 
 document.querySelectorAll('.tag').forEach(el => {
