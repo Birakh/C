@@ -67,6 +67,72 @@ header {
 .stat-value.ratio   { color: var(--amber); }
 .stat-value.big { font-size: 20px; }
 
+/* ── Context window gauge ────────────────────────── */
+.ctx-bar {
+  height: 3px;
+  background: var(--bg3);
+  flex-shrink: 0;
+  position: relative;
+}
+.ctx-fill {
+  height: 100%;
+  width: 0%;
+  transition: width .35s ease, background .2s;
+  background: var(--blue);
+}
+.ctx-fill.warn  { background: var(--amber); }
+.ctx-fill.danger{ background: var(--red); }
+.ctx-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 18px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ctx-label { font-size: 8.5px; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; white-space: nowrap; }
+.ctx-value { font-size: 9px; font-variant-numeric: tabular-nums; color: var(--dim); }
+.ctx-value strong { color: var(--blue); font-weight: 500; }
+.ctx-value.warn strong  { color: var(--amber); }
+.ctx-value.danger strong { color: var(--red); }
+.model-select {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 2px 6px;
+  cursor: pointer;
+  border-radius: 2px;
+  outline: none;
+}
+.model-select:focus { border-color: var(--amber); color: var(--text); }
+.model-select option { background: #1a1a1a; }
+
+/* ── Mode toggle ─────────────────────────────────── */
+.mode-toggle {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.mode-btn {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  cursor: pointer;
+  color: var(--dim);
+  background: transparent;
+  transition: all .1s;
+}
+.mode-btn.active { border-color: var(--blue); color: var(--blue); background: rgba(96,165,250,.08); }
+
 /* ── Panel stat strip ────────────────────────────── */
 .panel-stats {
   display: flex;
@@ -403,15 +469,37 @@ footer span { font-size: 9px; color: var(--muted); letter-spacing: .08em; }
   </div>
 </header>
 
+<div class="ctx-info">
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <span class="ctx-label">context window</span>
+    <span class="ctx-value" id="ctx-pct-label"><strong id="ctx-pct">0%</strong> used · <span id="ctx-remaining">1M</span> remaining</span>
+    <span class="ctx-value" id="ctx-cost-label" style="display:none;">· est. cost: <strong id="ctx-cost">$0.00</strong></span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <div class="mode-toggle">
+      <span class="ctx-label">mode:</span>
+      <button class="mode-btn active" id="mode-user">user msg</button>
+      <button class="mode-btn" id="mode-system">system prompt</button>
+    </div>
+    <select class="model-select" id="model-select">
+      <option value="1000000|3|15"  selected>Sonnet 4.6 — 1M ctx · $3/$15</option>
+      <option value="1000000|5|25">Opus 4.6 — 1M ctx · $5/$25</option>
+      <option value="200000|1|5">Haiku 4.5 — 200k ctx · $1/$5</option>
+    </select>
+  </div>
+</div>
+<div class="ctx-bar"><div class="ctx-fill" id="ctx-fill"></div></div>
+
 <div class="options-bar">
-  <span class="bar-label">techniques:</span>
-  <div class="tag on" data-key="whitespace"><span class="tag-dot"></span>whitespace</div>
+  <span class="bar-label">high impact:</span>
   <div class="tag on" data-key="filler"><span class="tag-dot"></span>filler words</div>
   <div class="tag on" data-key="hedges"><span class="tag-dot"></span>hedges</div>
-  <div class="tag on" data-key="abbreviate"><span class="tag-dot"></span>abbreviations</div>
-  <div class="tag on" data-key="symbols"><span class="tag-dot"></span>symbols</div>
-  <div class="tag on" data-key="markdown"><span class="tag-dot"></span>strip markdown</div>
   <div class="tag on" data-key="contractions"><span class="tag-dot"></span>contractions</div>
+  <div class="tag on" data-key="whitespace"><span class="tag-dot"></span>whitespace</div>
+  <span class="bar-label" style="margin-left:8px;">style only:</span>
+  <div class="tag" data-key="abbreviate" title="cosmetic — minimal token savings"><span class="tag-dot"></span>abbreviations</div>
+  <div class="tag" data-key="markdown" title="keep OFF unless you want plain text output"><span class="tag-dot"></span>strip markdown</div>
+  <span class="bar-label" style="margin-left:8px;">lossy:</span>
   <div class="tag warn" data-key="stopwords"><span class="tag-dot"></span>stop words ⚠</div>
   <div class="tag warn" data-key="aggressive"><span class="tag-dot"></span>aggressive ⚠</div>
 </div>
@@ -473,7 +561,7 @@ footer span { font-size: 9px; color: var(--muted); letter-spacing: .08em; }
 </div>
 
 <footer>
-  <span>token estimate: ~4 chars / token (BPE approximation)</span>
+  <span>token estimate: chars ÷ 4 · Anthropic BPE approximation · ±10% on typical prose</span>
   <button id="diff-toggle">▸ show removed</button>
 </footer>
 
@@ -482,12 +570,12 @@ const opts = {
   whitespace:   true,
   filler:       true,
   hedges:       true,
-  abbreviate:   true,
-  symbols:      true,
-  markdown:     true,
+  abbreviate:   false,  // style-only, minimal token savings
+  markdown:     false,  // off by default — Claude handles markdown natively
   contractions: true,
   stopwords:    false,
   aggressive:   false,
+  // 'symbols' removed — "and"→"&", "because"→"bc" don't save BPE tokens
 };
 
 const removed = [];
@@ -610,33 +698,6 @@ const ABBREVS = [
   [/\bapplication\s+programming\s+interface\b/gi, 'API'],
 ];
 
-const SYMBOLS = [
-  [/\bin\s+order\s+to\b/gi, 'to'],
-  [/\bso\s+that\b/gi, '→'],
-  [/\bleads?\s+to\b/gi, '→'],
-  [/\bresults?\s+in\b/gi, '→'],
-  [/\bcauses?\b/gi, '→'],
-  [/\bwhich\s+means?\b/gi, '→'],
-  [/\btherefore\b/gi, '∴'],
-  [/\bconsequently\b/gi, '∴'],
-  [/\bthus\b/gi, '∴'],
-  [/\bbecause\b/gi, 'bc'],
-  [/\bgreater\s+than\b/gi, '>'],
-  [/\bless\s+than\b/gi, '<'],
-  [/\bequal\s+to\b/gi, '='],
-  [/\bmore\s+than\b/gi, '>'],
-  [/\bfewer\s+than\b/gi, '<'],
-  [/\bat\s+least\b/gi, '≥'],
-  [/\bat\s+most\b/gi, '≤'],
-  [/\bplus\b/gi, '+'],
-  [/\bor\s+more\b/gi, '+'],
-  [/\band\b/gi, '&'],
-  [/\bwith\b/gi, 'w/'],
-  [/\bnot\s+equal\s+to\b/gi, '≠'],
-  [/\bapproximately\s+equal\b/gi, '≈'],
-  [/\barrow\s+pointing\s+to\b/gi, '→'],
-];
-
 const STOPWORDS = [
   /\b(the|a|an)\s+(?=[a-z])/gi,
   /\bsome\s+/gi,
@@ -703,7 +764,6 @@ function compress(input) {
   if (opts.hedges)       apply(HEDGES,       'hedges');
   if (opts.contractions) apply(CONTRACTIONS, 'contractions');
   if (opts.abbreviate)   apply(ABBREVS,      'abbreviations');
-  if (opts.symbols)      apply(SYMBOLS,      'symbols');
 
   if (opts.stopwords) {
     STOPWORDS.forEach(re => {
@@ -758,17 +818,86 @@ diffToggle.addEventListener('click', () => {
   diffToggle.textContent = diffOpen ? '▾ hide removed' : '▸ show removed';
 });
 
+// BPE approximation: Anthropic's own guidance is ~4 chars/token
+// Much more accurate than word-count * 1.3, especially for code & technical text
+function estimateBPE(s) {
+  if (!s.trim()) return 0;
+  return Math.ceil(s.length / 4);
+}
+
 function countStats(s) {
   const chars    = s.length;
   const words    = s.trim() ? s.trim().split(/\s+/).filter(Boolean).length : 0;
   const lines    = s ? s.split('\n').length : 0;
-  const tokens   = Math.ceil(words * 1.3);
+  const tokens   = estimateBPE(s);
   const sents    = s.trim() ? (s.match(/[.!?]+(\s|$)/g) || []).length : 0;
   const htmlTags = (s.match(/<\/?[a-zA-Z][^>]*>/g) || []).length;
   const codeBlocks = (s.match(/```[\s\S]*?```/g) || []).length;
   const isHtml   = htmlTags > 2;
   return { chars, words, lines, tokens, sents, htmlTags, codeBlocks, isHtml };
 }
+
+/* ── Context window ──────────────────────────────── */
+// Accurate as of April 2026 (Anthropic official)
+// Format: contextTokens | inputPricePerMTok | outputPricePerMTok
+let ctxMax        = 1000000;  // Sonnet 4.6 default
+let inputPriceM   = 3;        // $ per million input tokens
+let outputPriceM  = 15;       // $ per million output tokens
+let currentMode   = 'user';
+
+function updateCtxGauge(outTokens) {
+  const pct  = Math.min(100, (outTokens / ctxMax) * 100);
+  const fill = document.getElementById('ctx-fill');
+  const pctEl= document.getElementById('ctx-pct');
+  const remEl= document.getElementById('ctx-remaining');
+  const label= document.getElementById('ctx-pct-label');
+  const costLabel = document.getElementById('ctx-cost-label');
+  const costEl    = document.getElementById('ctx-cost');
+
+  fill.style.width  = pct.toFixed(2) + '%';
+  fill.className    = 'ctx-fill' + (pct > 80 ? ' danger' : pct > 50 ? ' warn' : '');
+  label.className   = 'ctx-value' + (pct > 80 ? ' danger' : pct > 50 ? ' warn' : '');
+
+  pctEl.textContent = pct.toFixed(1) + '%';
+  const remaining   = ctxMax - outTokens;
+  remEl.textContent = remaining >= 1000 ? Math.round(remaining / 1000) + 'k' : remaining;
+
+  // Cost estimate — input tokens dominate for prompts
+  if (outTokens > 0) {
+    const costInput = (outTokens / 1_000_000) * inputPriceM;
+    costLabel.style.display = '';
+    costEl.textContent = costInput < 0.01
+      ? '<$0.01'
+      : '$' + costInput.toFixed(costInput < 1 ? 4 : 2);
+    // System prompt note: cost is multiplied every turn
+    costEl.title = currentMode === 'system'
+      ? 'per turn (system prompts are charged each request)'
+      : 'per request (input tokens only)';
+  } else {
+    costLabel.style.display = 'none';
+  }
+}
+
+document.getElementById('model-select').addEventListener('change', e => {
+  const [ctx, inp, out] = e.target.value.split('|').map(Number);
+  ctxMax       = ctx;
+  inputPriceM  = inp;
+  outputPriceM = out;
+  run();
+});
+
+document.getElementById('mode-user').addEventListener('click', () => {
+  currentMode = 'user';
+  document.getElementById('mode-user').classList.add('active');
+  document.getElementById('mode-system').classList.remove('active');
+  run();
+});
+document.getElementById('mode-system').addEventListener('click', () => {
+  currentMode = 'system';
+  document.getElementById('mode-system').classList.add('active');
+  document.getElementById('mode-user').classList.remove('active');
+  run();
+});
 
 /* ── Auto-detect content type ───────────────────── */
 let lastDetected = '';
@@ -898,6 +1027,7 @@ function run() {
 function updateHeaderStats(inTok, outTok, inChars, outChars) {
   sIn.textContent  = fmt(inTok);
   sOut.textContent = fmt(outTok);
+  updateCtxGauge(outTok);
   if (inTok > 0) {
     const savedTok   = inTok - outTok;
     const savedChars = inChars - outChars;
@@ -906,7 +1036,11 @@ function updateHeaderStats(inTok, outTok, inChars, outChars) {
     sRatio.textContent = ratio + '%';
     sChars.textContent = (savedChars >= 0 ? '−' : '+') + fmt(Math.abs(savedChars));
     prog.style.width   = Math.max(0, Math.min(100, parseFloat(ratio))) + '%';
-    outMeta.textContent = fmt(outTok) + ' tokens';
+    // Show per-turn cost note if system prompt mode
+    const modeNote = currentMode === 'system'
+      ? ` · ×turns (sys)`
+      : '';
+    outMeta.textContent = fmt(outTok) + ' tokens' + modeNote;
   } else {
     sSaved.textContent = '—';
     sRatio.textContent = '—';
