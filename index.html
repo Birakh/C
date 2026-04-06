@@ -7,19 +7,21 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg:      #0b0b0b;
-  --bg2:     #111;
-  --bg3:     #161616;
-  --border:  #222;
-  --border2: #2e2e2e;
-  --amber:   #f59e0b;
-  --amber2:  #b45309;
-  --green:   #22c55e;
-  --red:     #ef4444;
-  --blue:    #60a5fa;
-  --text:    #e2e2e2;
-  --dim:     #666;
-  --muted:   #3a3a3a;
+  /* warm dark — easy on eyes, no cold grays */
+  --bg:      #1a1714;
+  --bg2:     #201d1a;
+  --bg3:     #252220;
+  --border:  #36322e;
+  --border2: #4a4540;
+  --amber:   #d4922a;
+  --amber2:  #b07020;
+  --green:   #4e9a62;
+  --red:     #b85050;
+  --blue:    #5b8fbf;
+  --teal:    #4a9a8a;
+  --text:    #cdc5ba;
+  --dim:     #7a7268;
+  --muted:   #4a4540;
   --mono: 'IBM Plex Mono', monospace;
 }
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -110,7 +112,7 @@ header {
   outline: none;
 }
 .model-select:focus { border-color: var(--amber); color: var(--text); }
-.model-select option { background: #1a1a1a; }
+.model-select option { background: #201d1a; }
 
 /* ── Mode toggle ─────────────────────────────────── */
 .mode-toggle {
@@ -315,7 +317,7 @@ textarea::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2
   font-weight: 600;
   padding: 16px 9px;
 }
-.strip-btn.primary:hover { background: #fbbf24; }
+.strip-btn.primary:hover { background: #e8a835; }
 .strip-btn.primary:active { background: var(--amber2); }
 .strip-btn.secondary {
   background: transparent;
@@ -473,7 +475,7 @@ footer span { font-size: 9px; color: var(--muted); letter-spacing: .08em; }
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
     <span class="ctx-label">context window</span>
     <span class="ctx-value" id="ctx-pct-label"><strong id="ctx-pct">0%</strong> used · <span id="ctx-remaining">1M</span> remaining</span>
-    <span class="ctx-value" id="ctx-cost-label" style="display:none;">· est. cost: <strong id="ctx-cost">$0.00</strong></span>
+    <span class="ctx-value" id="ctx-extra-label" style="display:none;"></span>
   </div>
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
     <div class="mode-toggle">
@@ -481,10 +483,16 @@ footer span { font-size: 9px; color: var(--muted); letter-spacing: .08em; }
       <button class="mode-btn active" id="mode-user">user msg</button>
       <button class="mode-btn" id="mode-system">system prompt</button>
     </div>
+    <div class="mode-toggle">
+      <span class="ctx-label">plan:</span>
+      <button class="mode-btn plan-btn active" id="plan-free" title="claude.ai — limits are token-based, not fixed message counts">free</button>
+      <button class="mode-btn plan-btn" id="plan-pro" title="$20/mo — ~45 msgs per 5-hr rolling window">Pro $20</button>
+      <button class="mode-btn plan-btn" id="plan-api" title="Direct API — billed per token">API</button>
+    </div>
     <select class="model-select" id="model-select">
-      <option value="1000000|3|15"  selected>Sonnet 4.6 — 1M ctx · $3/$15</option>
-      <option value="1000000|5|25">Opus 4.6 — 1M ctx · $5/$25</option>
-      <option value="200000|1|5">Haiku 4.5 — 200k ctx · $1/$5</option>
+      <option value="1000000|3|15" selected>Sonnet 4.6 — 1M ctx</option>
+      <option value="1000000|5|25">Opus 4.6 — 1M ctx</option>
+      <option value="200000|1|5">Haiku 4.5 — 200k ctx</option>
     </select>
   </div>
 </div>
@@ -837,66 +845,102 @@ function countStats(s) {
   return { chars, words, lines, tokens, sents, htmlTags, codeBlocks, isHtml };
 }
 
-/* ── Context window ──────────────────────────────── */
-// Accurate as of April 2026 (Anthropic official)
-// Format: contextTokens | inputPricePerMTok | outputPricePerMTok
-let ctxMax        = 1000000;  // Sonnet 4.6 default
-let inputPriceM   = 3;        // $ per million input tokens
-let outputPriceM  = 15;       // $ per million output tokens
-let currentMode   = 'user';
+/* ── Context window & plan ───────────────────────── */
+// Context windows & pricing accurate as of April 2026 (Anthropic docs)
+// Message limits: Anthropic doesn't publish exact numbers.
+// Best estimates from community testing (rolling 5-hr window):
+//   Free:     ~15–40 msgs  (token-based, varies with message length & server load)
+//   Pro $20:  ~45 msgs     (5-hr rolling window)
+//   Max $100: ~225 msgs    (5x Pro)
+//   Max $200: ~900 msgs    (20x Pro)
+// Key: limits are TOKEN-BASED not message-count-based.
+// Compressing prompts directly extends how many messages you can send.
 
-function updateCtxGauge(outTokens) {
-  const pct  = Math.min(100, (outTokens / ctxMax) * 100);
-  const fill = document.getElementById('ctx-fill');
-  const pctEl= document.getElementById('ctx-pct');
-  const remEl= document.getElementById('ctx-remaining');
-  const label= document.getElementById('ctx-pct-label');
-  const costLabel = document.getElementById('ctx-cost-label');
-  const costEl    = document.getElementById('ctx-cost');
+let ctxMax       = 1000000;
+let inputPriceM  = 3;
+let outputPriceM = 15;
+let currentMode  = 'user';
+let currentPlan  = 'free'; // 'free' | 'pro' | 'api'
+
+// Rough token budget per 5-hr window (community estimates, not official)
+// Based on: avg msg ≈ 500 tokens context, multiply by msg count
+const PLAN_INFO = {
+  free: { label: 'Free',     msgs: '15–40',  windowTok: 20000,  billPerTok: false },
+  pro:  { label: 'Pro $20',  msgs: '~45',    windowTok: 45000,  billPerTok: false },
+  api:  { label: 'API',      msgs: null,     windowTok: null,   billPerTok: true  },
+};
+
+function updateCtxGauge(savedTok, outTok) {
+  const pct   = Math.min(100, (outTok / ctxMax) * 100);
+  const fill  = document.getElementById('ctx-fill');
+  const pctEl = document.getElementById('ctx-pct');
+  const remEl = document.getElementById('ctx-remaining');
+  const label = document.getElementById('ctx-pct-label');
+  const extra = document.getElementById('ctx-extra-label');
 
   fill.style.width  = pct.toFixed(2) + '%';
   fill.className    = 'ctx-fill' + (pct > 80 ? ' danger' : pct > 50 ? ' warn' : '');
   label.className   = 'ctx-value' + (pct > 80 ? ' danger' : pct > 50 ? ' warn' : '');
-
   pctEl.textContent = pct.toFixed(1) + '%';
-  const remaining   = ctxMax - outTokens;
-  remEl.textContent = remaining >= 1000 ? Math.round(remaining / 1000) + 'k' : remaining;
+  const rem = ctxMax - outTok;
+  remEl.textContent = rem >= 1000 ? Math.round(rem / 1000) + 'k' : rem;
 
-  // Cost estimate — input tokens dominate for prompts
-  if (outTokens > 0) {
-    const costInput = (outTokens / 1_000_000) * inputPriceM;
-    costLabel.style.display = '';
-    costEl.textContent = costInput < 0.01
-      ? '<$0.01'
-      : '$' + costInput.toFixed(costInput < 1 ? 4 : 2);
-    // System prompt note: cost is multiplied every turn
-    costEl.title = currentMode === 'system'
-      ? 'per turn (system prompts are charged each request)'
-      : 'per request (input tokens only)';
+  const plan = PLAN_INFO[currentPlan];
+
+  if (currentPlan === 'api') {
+    // Show cost estimate
+    if (outTok > 0) {
+      const cost = (outTok / 1_000_000) * inputPriceM;
+      const costStr = cost < 0.01 ? '<$0.01' : '$' + cost.toFixed(cost < 1 ? 4 : 2);
+      const note = currentMode === 'system' ? ' per turn' : ' per request';
+      extra.style.display = '';
+      extra.innerHTML = `· est. cost: <strong style="color:var(--teal)">${costStr}</strong><span style="color:var(--dim);font-size:8px"> ${note}</span>`;
+    } else {
+      extra.style.display = 'none';
+    }
   } else {
-    costLabel.style.display = 'none';
+    // Show token-budget insight for free/Pro
+    if (savedTok > 0 && plan.windowTok) {
+      const pctOfWindow = ((savedTok / plan.windowTok) * 100).toFixed(1);
+      extra.style.display = '';
+      extra.innerHTML = `· saving ${fmt(savedTok)} tokens = <strong style="color:var(--green)">+${pctOfWindow}%</strong> <span style="color:var(--dim);font-size:8px">more usage on ${plan.label} (est. 5-hr window)</span>`;
+    } else if (outTok > 0 && plan.msgs) {
+      extra.style.display = '';
+      extra.innerHTML = `<span style="color:var(--dim);font-size:8.5px">${plan.label} limit: approx ${plan.msgs} msgs / 5-hr window · token-based, varies with length · Anthropic doesn't publish exact numbers</span>`;
+    } else {
+      extra.style.display = 'none';
+    }
   }
 }
 
 document.getElementById('model-select').addEventListener('change', e => {
   const [ctx, inp, out] = e.target.value.split('|').map(Number);
-  ctxMax       = ctx;
-  inputPriceM  = inp;
-  outputPriceM = out;
+  ctxMax = ctx; inputPriceM = inp; outputPriceM = out;
   run();
 });
 
-document.getElementById('mode-user').addEventListener('click', () => {
-  currentMode = 'user';
-  document.getElementById('mode-user').classList.add('active');
-  document.getElementById('mode-system').classList.remove('active');
-  run();
+['mode-user','mode-system'].forEach(id => {
+  document.getElementById(id).addEventListener('click', () => {
+    currentMode = id === 'mode-user' ? 'user' : 'system';
+    document.getElementById('mode-user').classList.toggle('active', currentMode === 'user');
+    document.getElementById('mode-system').classList.toggle('active', currentMode === 'system');
+    run();
+  });
 });
-document.getElementById('mode-system').addEventListener('click', () => {
-  currentMode = 'system';
-  document.getElementById('mode-system').classList.add('active');
-  document.getElementById('mode-user').classList.remove('active');
-  run();
+
+['plan-free','plan-pro','plan-api'].forEach(id => {
+  document.getElementById(id).addEventListener('click', () => {
+    currentPlan = id.replace('plan-', '');
+    ['plan-free','plan-pro','plan-api'].forEach(b =>
+      document.getElementById(b).classList.toggle('active', b === id));
+    // Show/hide pricing in model dropdown only for API
+    const prices = ['$3/$15 per MTok', '$5/$25 per MTok', '$1/$5 per MTok'];
+    document.querySelectorAll('#model-select option').forEach((o, i) => {
+      const base = o.textContent.replace(/ · \$.*/, '');
+      o.textContent = currentPlan === 'api' ? base + ' · ' + prices[i] : base;
+    });
+    run();
+  });
 });
 
 /* ── Auto-detect content type ───────────────────── */
@@ -1027,19 +1071,16 @@ function run() {
 function updateHeaderStats(inTok, outTok, inChars, outChars) {
   sIn.textContent  = fmt(inTok);
   sOut.textContent = fmt(outTok);
-  updateCtxGauge(outTok);
+  const savedTok   = inTok - outTok;
+  updateCtxGauge(savedTok, outTok);
   if (inTok > 0) {
-    const savedTok   = inTok - outTok;
     const savedChars = inChars - outChars;
     const ratio = ((savedTok / inTok) * 100).toFixed(1);
     sSaved.textContent = (savedTok >= 0 ? '−' : '+') + fmt(Math.abs(savedTok));
     sRatio.textContent = ratio + '%';
     sChars.textContent = (savedChars >= 0 ? '−' : '+') + fmt(Math.abs(savedChars));
     prog.style.width   = Math.max(0, Math.min(100, parseFloat(ratio))) + '%';
-    // Show per-turn cost note if system prompt mode
-    const modeNote = currentMode === 'system'
-      ? ` · ×turns (sys)`
-      : '';
+    const modeNote = currentMode === 'system' ? ' · ×turns (sys)' : '';
     outMeta.textContent = fmt(outTok) + ' tokens' + modeNote;
   } else {
     sSaved.textContent = '—';
